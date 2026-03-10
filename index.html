@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RGC Player - Retro Game Chip (Viewer)</title>
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <style>
+        :root { 
+            /* 本体を白（color-5相当）に固定 */
+            --body-base: #f0f0f0; --body-shd: #cccccc; --screen-frame: #333;
+            --lcd-bg: #00d4ff; --gb-0: #001a2d; --gb-1: #00a3cc; --gb-2: #00d4ff; --gb-3: #e0ffff;
+            --gb-tail: rgba(0, 26, 45, 0.7); --btn-color: #222; --led-green: #0f0; --led-off: #030;
+        }
+
+        body { background: #121212; font-family: 'DotGothic16', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; user-select: none; }
+        .dmg-body { background: var(--body-base); width: 800px; padding: 45px; border-radius: 50px; box-shadow: inset -6px -10px 0 var(--body-shd), 15px 25px 60px rgba(0,0,0,0.8); position: relative; }
+        .logo-area { text-align: center; margin-bottom: 25px; }
+        .logo-main { font-weight: 900; font-size: 36px; color: #444; letter-spacing: 2px; }
+        .logo-sub { font-size: 12px; color: #666; font-weight: bold; letter-spacing: 3px; margin-top: -5px; }
+
+        .screen-bezel { background: var(--screen-frame); padding: 40px 30px; border-radius: 15px; margin-bottom: 30px; position: relative; box-shadow: inset 0 0 25px #000; }
+        .power-led { width: 12px; height: 12px; border-radius: 50%; background: var(--led-off); position: absolute; left: 10px; top: 45%; border: 1px solid #111; }
+        .power-led.power-on { background: var(--led-green); box-shadow: 0 0 12px var(--led-green); }
+        
+        .lcd-screen { background: var(--lcd-bg); border: 4px solid #000; display: grid; grid-template-columns: 60px repeat(16, 1fr); gap: 2px; padding: 10px; }
+        .cell { aspect-ratio: 1/1; border: 1px solid var(--gb-1); background: var(--gb-2); pointer-events: none; position: relative; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--gb-1); }
+        .cell.active { background: var(--gb-0); color: var(--gb-3); }
+        .cell.tail { background: var(--gb-tail); }
+        .cell.playing { background: #fff !important; color: #000; outline: 3px solid #fff; z-index: 10; }
+        .label { font-size: 16px; color: #fff; background: var(--gb-0); height: 100%; display: flex; align-items: center; justify-content: center; }
+
+        .top-info { position: absolute; top: 15px; right: 40px; display: flex; gap: 20px; font-size: 12px; color: #444; font-weight: bold; }
+        .controls { display: flex; justify-content: space-between; align-items: center; padding: 0 15px; }
+        
+        .d-btn { 
+            background: var(--btn-color); cursor: pointer; display: flex; align-items: center; justify-content: center; 
+            color: white; box-shadow: 0 5px 0 #000; border-radius: 10px; width: 55px; height: 55px; font-size: 24px; 
+            transition: transform 0.05s, box-shadow 0.05s;
+        }
+        .d-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
+        
+        .get-full-btn { 
+            position: absolute; left: 50%; transform: translateX(-50%);
+            padding: 15px 25px; background: #e62e2e; color: white; text-decoration: none;
+            border-radius: 8px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 0 #800;
+            transition: transform 0.05s, box-shadow 0.05s;
+        }
+        .get-full-btn:active { transform: translateX(-50%) translateY(2px); box-shadow: 0 2px 0 #800; }
+
+        .play-overlay { 
+            position: absolute; top:0; left:0; width:100%; height:100%; z-index: 200;
+            background: rgba(0,0,0,0.85); border-radius: 50px; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="dmg-body" id="bodyNode">
+        <div id="startOverlay" class="play-overlay">
+            <h2 style="letter-spacing: 5px; margin-bottom: 10px;">RGC PLAYER</h2>
+            <p>CLICK TO PLAY SHARED TRACK</p>
+        </div>
+
+        <div class="top-info">
+            <div>BPM: <span id="bpmDisp">150</span></div>
+            <div>FX: <span id="fxDisp">NONE</span></div>
+        </div>
+
+        <div class="logo-area">
+            <div class="logo-main">ＲＧＣ</div>
+            <div class="logo-sub">PLAYER / VIEWER</div>
+        </div>
+
+        <div class="screen-bezel">
+            <div style="color:#FFF; font-size:12px; position:absolute; top:15px; right:30px; letter-spacing:1px;">PAGE:<span id="curPageDisp">1</span>/4</div>
+            <div class="power-led" id="led"></div>
+            <div class="lcd-screen" id="sequencer"></div>
+        </div>
+
+        <div class="controls">
+            <div style="display:flex; gap:15px;">
+                <div class="d-btn" onclick="changePage(-1)">◀</div>
+                <div class="d-btn" onclick="changePage(1)">▶</div>
+            </div>
+            
+            <a href="あなたのBOOTHリンクURL" class="get-full-btn" target="_blank">GET FULL VERSION</a>
+
+            <div style="display:flex; gap:20px;">
+                <div class="d-btn" id="stopBtn" style="border-radius:50%; width:85px; height:85px; font-size:12px; flex-direction:column;">
+                    <span style="font-size:24px; margin-bottom:2px;">■</span>STOP
+                </div>
+                <div class="d-btn" id="playBtn" style="border-radius:50%; width:85px; height:85px; font-size:12px; flex-direction:column;">
+                    <span style="font-size:24px; margin-bottom:2px;">▶</span>PLAY
+                </div>
+            </div>
+        </div>
+        <div style="text-align:center; margin-top:30px; color:#666; font-size:10px; letter-spacing:1px;">PRODUCED BY YUKI / RGC-SYSTEM</div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // --- Effect Nodes ---
+        const masterBus = audioCtx.createGain();
+        const distNode = audioCtx.createWaveShaper();
+        masterBus.connect(audioCtx.destination);
+
+        function makeDistortionCurve(amount) {
+            let k = amount, n = 44100, curve = new Float32Array(n), deg = Math.PI / 180;
+            for (let i = 0 ; i < n; ++i ) {
+                let x = i * 2 / n - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            } return curve;
+        }
+        distNode.curve = makeDistortionCurve(400);
+        distNode.oversample = '4x';
+
+        // --- States ---
+        const tracks = [{n:'P1',t:'p',d:0.125},{n:'P2',t:'p',d:0.5},{n:'WV',t:'w'},{n:'BD',t:'d',dr:'b'},{n:'SD',t:'d',dr:'s'},{n:'HH',t:'h'}];
+        const notes = [130.81, 138.59, 146.83, 155.56, 164.81, 174.61, 185.00, 196.00, 207.65, 220.00, 233.08, 246.94, 261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392.00, 415.30, 440.00, 466.16, 493.88, 523.25];
+        
+        let data = Array.from({length: 4}, () => Array.from({length: 6}, () => Array.from({length: 16}, () => ({a: false, n: 12, l: 1}))));
+        let isPlaying = false, currentStep = 0, currentPlayPage = 0, viewPage = 0, nextTime = 0, bpm = 150, isDist = false, isSwing = false, timerID = null;
+
+        // --- データ復元 (Import) ---
+        function importData() {
+            const params = new URLSearchParams(window.location.search);
+            const d = params.get('d');
+            const b = params.get('b');
+            const fx = params.get('fx');
+
+            if (d) { try { data = JSON.parse(atob(d)); } catch(e) {} }
+            if (b) { bpm = parseInt(b); document.getElementById('bpmDisp').innerText = bpm; }
+            if (fx) {
+                isDist = fx.includes('1');
+                isSwing = fx.includes('2');
+                document.getElementById('fxDisp').innerText = (isDist ? 'DIST ' : '') + (isSwing ? 'SWING' : '') || 'NONE';
+            }
+        }
+
+        // --- 音源生成 ---
+        const getGBWave = () => {
+            const size = 32, real = new Float32Array(size), imag = new Float32Array(size);
+            for (let n = 1; n < 16; n++) if (n % 2 !== 0) imag[n] = (8 / (Math.pow(Math.PI, 2) * Math.pow(n, 2))) * ((n % 4 == 3) ? -1 : 1);
+            return audioCtx.createPeriodicWave(real, imag);
+        };
+        const getP = (d) => {
+            const r = new Float32Array(32), i = new Float32Array(32);
+            for(let n=1; n<32; n++) i[n]=(2/(n*Math.PI))*Math.sin(n*Math.PI*d);
+            return audioCtx.createPeriodicWave(r,i);
+        };
+        const createGBNoiseBuffer = (duration, isShort = false, div = 4) => {
+            const sr = audioCtx.sampleRate, buffer = audioCtx.createBuffer(1, sr * duration, sr), out = buffer.getChannelData(0);
+            let reg = 0x7FFF, last = 0;
+            for (let i = 0; i < out.length; i++) {
+                if (i % div === 0) {
+                    const bit = (reg ^ (reg >> 1)) & 1;
+                    reg = (reg >> 1) | (bit << 14);
+                    if (isShort) reg = (reg & ~(1 << 6)) | (bit << 6);
+                    last = (reg & 1) ? 0.15 : -0.15;
+                } out[i] = last;
+            } return buffer;
+        };
+
+        function play(r, it, t) {
+            const tr = tracks[r], dur = (60/bpm/4)*it.l, g = audioCtx.createGain();
+            const vol = isDist ? 0.35 : 1.0;
+            const dest = isDist ? distNode : masterBus;
+            if(isDist) distNode.connect(masterBus);
+
+            if(tr.t === 'd' || tr.t === 'h') {
+                if(tr.dr === 'b') {
+                    const o = audioCtx.createOscillator(); o.setPeriodicWave(getGBWave()); o.frequency.setValueAtTime(200, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.1);
+                    g.gain.setValueAtTime(0.4 * vol, t); g.gain.linearRampToValueAtTime(0, t + 0.12);
+                    o.connect(g); o.start(t); o.stop(t + 0.12);
+                } else if(tr.dr === 's') {
+                    const n = audioCtx.createBufferSource(); n.buffer = createGBNoiseBuffer(0.2, false, 4);
+                    const ng = audioCtx.createGain(); ng.gain.setValueAtTime(0.45 * vol, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+                    n.connect(ng); ng.connect(dest); n.start(t); return;
+                } else {
+                    const n = audioCtx.createBufferSource(); n.buffer = createGBNoiseBuffer(0.05, true, 2);
+                    const ng = audioCtx.createGain(); ng.gain.setValueAtTime(0.2 * vol, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+                    n.connect(ng); ng.connect(dest); n.start(t); return;
+                }
+            } else {
+                const o = audioCtx.createOscillator(); o.setPeriodicWave(tr.t==='w' ? getGBWave() : getP(tr.d));
+                o.frequency.setValueAtTime(notes[Math.min(it.n, 24)], t); 
+                g.gain.setValueAtTime((tr.t==='w'? 0.15 : 0.12) * vol, t); 
+                g.gain.linearRampToValueAtTime(0.001, t + dur); o.connect(g); o.start(t); o.stop(t + dur);
+            } g.connect(dest);
+        }
+
+        // --- UI ---
+        const seq = document.getElementById('sequencer');
+        function initUI() {
+            seq.innerHTML = '';
+            tracks.forEach((tr, r) => {
+                const l = document.createElement('div'); l.className='label'; l.innerText=tr.n; seq.appendChild(l);
+                for(let s=0; s<16; s++) {
+                    const c = document.createElement('div'); c.className='cell'; c.id=`c-${r}-${s}`;
+                    c.innerHTML='<span class="note-num"></span>'; seq.appendChild(c);
+                }
+            });
+        }
+
+        function draw() {
+            document.getElementById('curPageDisp').innerText = viewPage + 1;
+            for(let r=0; r<6; r++) {
+                for(let s=0; s<16; s++) {
+                    const el = document.getElementById(`c-${r}-${s}`);
+                    const it = data[viewPage][r][s];
+                    const num = el.querySelector('.note-num');
+                    el.className = 'cell'; num.innerText = "";
+                    if(it.a) { el.classList.add('active'); if(r<3) num.innerText=it.n; }
+                    else {
+                        let isTail = false;
+                        for(let i=0; i<s; i++) { if(data[viewPage][r][i].a && (i + data[viewPage][r][i].l > s)) { isTail = true; break; } }
+                        if(isTail) el.classList.add('tail');
+                    }
+                    if(isPlaying && viewPage === currentPlayPage && s === currentStep) el.classList.add('playing');
+                }
+            }
+        }
+
+        function changePage(dir) { viewPage = (viewPage + dir + 4) % 4; draw(); }
+
+        function scheduler() {
+            if (!isPlaying) return;
+            while (nextTime < audioCtx.currentTime + 0.15) {
+                const s = currentStep;
+                let playTime = nextTime;
+                if (isSwing && s % 2 !== 0) playTime += (60 / bpm / 4) * 0.35;
+
+                for (let r = 0; r < 6; r++) if (data[currentPlayPage][r][s].a) play(r, data[currentPlayPage][r][s], playTime);
+                
+                if (viewPage !== currentPlayPage) viewPage = currentPlayPage;
+                nextTime += 60 / bpm / 4;
+                currentStep++;
+                if (currentStep >= 16) { currentStep = 0; currentPlayPage = (currentPlayPage + 1) % 4; }
+            }
+            timerID = setTimeout(scheduler, 25);
+            draw();
+        }
+
+        document.getElementById('playBtn').onclick = () => {
+            if(!isPlaying) { 
+                if(audioCtx.state === 'suspended') audioCtx.resume();
+                isPlaying = true; nextTime = audioCtx.currentTime + 0.05; 
+                document.getElementById('led').classList.add('power-on'); scheduler(); 
+            }
+        };
+        document.getElementById('stopBtn').onclick = () => {
+            isPlaying = false; clearTimeout(timerID); currentStep = 0; currentPlayPage = 0;
+            document.getElementById('led').classList.remove('power-on'); draw();
+        };
+
+        document.getElementById('startOverlay').onclick = function() {
+            this.style.display = 'none';
+            importData();
+            initUI();
+            draw();
+        };
+    </script>
+</body>
+</html>
