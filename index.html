@@ -53,6 +53,7 @@
             background: rgba(0,0,0,0.85); border-radius: 50px; display: flex; flex-direction: column;
             justify-content: center; align-items: center; color: white; cursor: pointer;
         }
+        .note-num { font-size: 10px; }
     </style>
 </head>
 <body>
@@ -120,6 +121,7 @@
         const tracks = [{n:'P1',t:'p',d:0.125},{n:'P2',t:'p',d:0.5},{n:'WV',t:'w'},{n:'BD',t:'d',dr:'b'},{n:'SD',t:'d',dr:'s'},{n:'HH',t:'h'}];
         const notes = [130.81, 138.59, 146.83, 155.56, 164.81, 174.61, 185.00, 196.00, 207.65, 220.00, 233.08, 246.94, 261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392.00, 415.30, 440.00, 466.16, 493.88, 523.25];
         
+        // 初期データ（空の状態）
         let data = Array.from({length: 4}, () => Array.from({length: 6}, () => Array.from({length: 16}, () => ({a: false, n: 12, l: 1}))));
         let isPlaying = false, currentStep = 0, currentPlayPage = 0, viewPage = 0, nextTime = 0, bpm = 150, isDist = false, isSwing = false, timerID = null;
 
@@ -130,7 +132,22 @@
             const b = params.get('b');
             const fx = params.get('fx');
 
-            if (d) { try { data = JSON.parse(atob(d)); } catch(e) {} }
+            if (d) { 
+                try { 
+                    // 圧縮されたデータを解凍して元のオブジェクト形式にマッピング
+                    const jsonStr = decodeURIComponent(escape(atob(d)));
+                    const simplified = JSON.parse(jsonStr);
+                    
+                    data = simplified.map(page => 
+                        page.map(track => 
+                            track.map(step => {
+                                if (step === 0) return {a: false, n: 12, l: 1};
+                                return {a: true, n: step[0], l: step[1]};
+                            })
+                        )
+                    );
+                } catch(e) { console.error("Decode Error", e); } 
+            }
             if (b) { bpm = parseInt(b); document.getElementById('bpmDisp').innerText = bpm; }
             if (fx) {
                 isDist = fx.includes('1');
@@ -139,7 +156,7 @@
             }
         }
 
-        // --- 音源生成 ---
+        // --- 音源生成 (GB-Style) ---
         const getGBWave = () => {
             const size = 32, real = new Float32Array(size), imag = new Float32Array(size);
             for (let n = 1; n < 16; n++) if (n % 2 !== 0) imag[n] = (8 / (Math.pow(Math.PI, 2) * Math.pow(n, 2))) * ((n % 4 == 3) ? -1 : 1);
