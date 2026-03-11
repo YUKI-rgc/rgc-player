@@ -133,37 +133,25 @@
 
             if (d) { 
                 try { 
-                    if (d.startsWith('v2_')) {
-                        // 【新規】超軽量・暗号対応デコード (1文字1ステップ)
-                        const payload = d.substring(3);
-                        const charSet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#";
-                        let charIdx = 0;
-                        for (let p = 0; p < 4; p++) {
-                            for (let r = 0; r < 6; r++) {
-                                for (let s = 0; s < 16; s++) {
-                                    const val = charSet.indexOf(payload[charIdx++]);
-                                    if (val > 0) {
-                                        data[p][r][s] = {a: true, n: val - 1, l: 1};
-                                    } else {
-                                        data[p][r][s] = {a: false, n: 12, l: 1};
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // 【互換維持】従来のJSON/Base64デコード
-                        const jsonStr = decodeURIComponent(escape(atob(d)));
-                        const simplified = JSON.parse(jsonStr);
-                        data = simplified.map(page => 
-                            page.map(track => 
-                                track.map(step => {
-                                    if (step === 0) return {a: false, n: 12, l: 1};
-                                    return {a: true, n: step[0], l: step[1]};
-                                })
-                            )
-                        );
-                    }
-                } catch(e) { console.error("Decode Error", e); } 
+                    // 送る側の XOR 0x7F 暗号を解読する最新ロジック
+                    const raw = atob(d);
+                    const decoded = raw.split('').map(c => String.fromCharCode(c.charCodeAt(0) ^ 0x7F)).join('');
+                    const jsonStr = decodeURIComponent(escape(decoded));
+                    const simplified = JSON.parse(jsonStr);
+
+                    data = simplified.map(page => 
+                        page.map(track => 
+                            track.map(step => {
+                                // 0 は「音なし」として扱う
+                                if (step === 0) return {a: false, n: 12, l: 1};
+                                // [音程, 長さ] の配列をオブジェクトに変換
+                                return {a: true, n: step[0], l: step[1]};
+                            })
+                        )
+                    );
+                } catch(e) { 
+                    console.error("Decode Error", e); 
+                } 
             }
             if (b) { bpm = parseInt(b); document.getElementById('bpmDisp').innerText = bpm; }
             if (fx) {
@@ -242,6 +230,7 @@
             for(let r=0; r<6; r++) {
                 for(let s=0; s<16; s++) {
                     const el = document.getElementById(`c-${r}-${s}`);
+                    if (!el) continue;
                     const it = data[viewPage][r][s];
                     const num = el.querySelector('.note-num');
                     el.className = 'cell'; num.innerText = "";
@@ -265,10 +254,14 @@
                 let playTime = nextTime;
                 if (isSwing && s % 2 !== 0) playTime += (60 / bpm / 4) * 0.35;
                 for (let r = 0; r < 6; r++) if (data[currentPlayPage][r][s].a) play(r, data[currentPlayPage][r][s], playTime);
-                if (viewPage !== currentPlayPage) viewPage = currentPlayPage;
+                
                 nextTime += 60 / bpm / 4;
                 currentStep++;
-                if (currentStep >= 16) { currentStep = 0; currentPlayPage = (currentPlayPage + 1) % 4; }
+                if (currentStep >= 16) { 
+                    currentStep = 0; 
+                    currentPlayPage = (currentPlayPage + 1) % 4; 
+                }
+                if (viewPage !== currentPlayPage && currentStep === 0) viewPage = currentPlayPage;
             }
             timerID = setTimeout(scheduler, 25);
             draw();
